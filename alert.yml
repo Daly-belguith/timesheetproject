@@ -1,0 +1,183 @@
+# Configuration des Règles d'Alerte Prometheus
+# Fichier: alert.yml
+# À décommenter dans prometheus.yml pour activer les alertes
+
+groups:
+  - name: timesheet-devops-alerts
+    interval: 30s
+    rules:
+      # ============ APPLICATION SPRING ============
+      - alert: SpringAppDown
+        expr: up{job="timesheet-devops"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: spring
+        annotations:
+          summary: "Spring App est DOWN"
+          description: "L'application Spring Boot n'est pas accessible depuis 2 minutes"
+
+      - alert: HighJVMMemoryUsage
+        expr: (jvm_memory_used_bytes / jvm_memory_max_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: spring
+        annotations:
+          summary: "Utilisation JVM > 85%"
+          description: "La mémoire JVM dépasse 85% (valeur actuelle: {{ $value }}%)"
+
+      - alert: HighSpringCPUUsage
+        expr: rate(process_cpu_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: spring
+        annotations:
+          summary: "CPU Spring App > 80%"
+          description: "Utilisation CPU de Spring dépasse 80%"
+
+      # ============ SYSTÈME UBUNTU ============
+      - alert: HighSystemCPUUsage
+        expr: 100 - (avg(irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "CPU Système > 85%"
+          description: "Utilisation CPU système dépasse 85%"
+
+      - alert: HighMemoryUsage
+        expr: ((node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "Mémoire Système > 85%"
+          description: "Utilisation mémoire système dépasse 85%"
+
+      - alert: HighDiskUsage
+        expr: 100 - (node_filesystem_avail_bytes / node_filesystem_size_bytes * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "Disque > 85%"
+          description: "Utilisation disque dépasse 85% sur {{ $labels.device }}"
+
+      - alert: DiskSpaceCritical
+        expr: 100 - (node_filesystem_avail_bytes / node_filesystem_size_bytes * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+          service: system
+        annotations:
+          summary: "Disque CRITIQUE > 95%"
+          description: "ALERTE CRITIQUE: Disque presque plein ({{ $value }}%)"
+
+      - alert: NodeExporterDown
+        expr: up{job="ubuntu-node"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "Node Exporter est DOWN"
+          description: "Node Exporter sur Ubuntu n'est pas accessible"
+
+      # ============ DOCKER CONTAINERS ============
+      - alert: ContainerMemoryUsageHigh
+        expr: container_memory_usage_bytes > 1073741824
+        for: 5m
+        labels:
+          severity: warning
+          service: docker
+        annotations:
+          summary: "Conteneur utilise > 1GB mémoire"
+          description: "Conteneur {{ $labels.container_name }} utilise {{ $value | humanize }} bytes"
+
+      - alert: CAdvisorDown
+        expr: up{job="cadvisor"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          service: docker
+        annotations:
+          summary: "cAdvisor est DOWN"
+          description: "cAdvisor n'est pas accessible depuis 2 minutes"
+
+      # ============ JENKINS CI/CD ============
+      - alert: JenkinsBuildFailureRate
+        expr: rate(jenkins_builds_total{result="failure"}[1h]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          service: jenkins
+        annotations:
+          summary: "Taux d'échec Jenkins élevé"
+          description: "Plus de 50% des builds échouent"
+
+      - alert: JenkinsBuildTimeHigh
+        expr: histogram_quantile(0.99, rate(jenkins_build_duration_seconds_bucket[5m])) > 3600
+        for: 5m
+        labels:
+          severity: warning
+          service: jenkins
+        annotations:
+          summary: "Durée des builds Jenkins élevée"
+          description: "99e percentile de durée dépasse 1h"
+
+      - alert: JenkinsDown
+        expr: up{job="jenkins"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: jenkins
+        annotations:
+          summary: "Jenkins est DOWN"
+          description: "Jenkins n'est pas accessible depuis 2 minutes"
+
+      # ============ PROMETHEUS ============
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: prometheus
+        annotations:
+          summary: "Prometheus est DOWN"
+          description: "Prometheus n'est pas accessible"
+
+      - alert: PrometheusConfigReloadFailed
+        expr: prometheus_config_last_reload_successful == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: prometheus
+        annotations:
+          summary: "Chargement de config Prometheus échoué"
+          description: "La dernière tentative de chargement de la configuration a échoué"
+
+      - alert: PrometheusStorageRetentionLow
+        expr: (prometheus_tsdb_retention_limit_bytes - prometheus_tsdb_size_bytes) / prometheus_tsdb_retention_limit_bytes < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: prometheus
+        annotations:
+          summary: "Espace de stockage Prometheus faible"
+          description: "Moins de 10% d'espace de stockage disponible"
+
+      # ============ GRAFANA ============
+      - alert: GrafanaDown
+        expr: up{job="grafana"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: grafana
+        annotations:
+          summary: "Grafana est DOWN"
+          description: "Grafana n'est pas accessible depuis 2 minutes"
