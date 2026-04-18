@@ -51,16 +51,17 @@ scrape_configs:
         target_label: instance
         replacement: 'ubuntu'
 
-  # ============ Docker/cAdvisor Metrics ============
-  - job_name: 'cadvisor'
-    static_configs:
-      - targets: ['cadvisor:8080']
-        labels:
-          service: 'docker-metrics'
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: instance
-        replacement: 'docker'
+  # ============ Docker/cAdvisor Metrics (DISABLED - Compatibility Issue) ============
+  # Uncomment below if you resolve Docker Compose compatibility issue
+  # - job_name: 'cadvisor'
+  #   static_configs:
+  #     - targets: ['cadvisor:8080']
+  #       labels:
+  #         service: 'docker-metrics'
+  #   relabel_configs:
+  #     - source_labels: [__address__]
+  #       target_label: instance
+  #       replacement: 'docker'
 
   # ============ Jenkins Metrics ============
   # Assurez-vous que Jenkins est accessible sur le réseau
