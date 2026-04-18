@@ -24,7 +24,7 @@ pipeline {
             steps {
                 echo '========== Checking out code =========='
                 git branch: 'master',
-                    url: 'https://github.com/hwafa/timesheetproject.git'
+                    url: 'https://github.com/Daly-belguith/timesheetproject.git'
                 echo '✓ Code checked out successfully'
             }
         }
