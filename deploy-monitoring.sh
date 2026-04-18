@@ -309,7 +309,7 @@ ${GREEN}✓ DÉPLOIEMENT COMPLÉTÉ - Services accessibles:${NC}
    Targets: http://${LOCAL_IP}:9090/targets
 
 🐳 PORTAINER (Docker Management UI + Container Metrics)
-   URL: http://${LOCAL_IP}:9000
+   URL: http://${LOCAL_IP}:8001
    Utilisateur: admin
    Mot de passe: admin123
    Features: Gérer conteneurs, images, volumes, logs, stats en temps réel
