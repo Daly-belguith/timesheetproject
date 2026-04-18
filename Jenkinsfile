@@ -49,7 +49,7 @@ pipeline {
             steps {
                 echo '========== Running SonarQube Analysis =========='
                 sh '''
-                    mvn clean verify sonar:sonar \
+                    mvn sonar:sonar \
                       -Dsonar.projectKey=${PROJECT_KEY} \
                       -Dsonar.host.url=${SONARQUBE_URL} \
                       -Dsonar.login=${SONARQUBE_TOKEN} \
@@ -73,18 +73,16 @@ pipeline {
     post {
         always {
             echo '========== Publishing Test Reports =========='
-            junit '**/target/surefire-reports/*.xml'
+            junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
             
             // Archive artifacts
             archiveArtifacts artifacts: 'target/*.jar', allowEmptyArchive: true
-            
-            // Clean workspace
-            cleanWs()
         }
 
         success {
             echo '✓✓✓ Pipeline completed successfully! ✓✓✓'
             echo "Artifact location: ${BUILD_URL}artifact/target/"
+            echo "SonarQube Dashboard: ${SONARQUBE_URL}/dashboard?id=${PROJECT_KEY}"
         }
 
         failure {
