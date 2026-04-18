@@ -2,29 +2,45 @@
 
 <#
 .SYNOPSIS
-    Script de déploiement Prometheus & Grafana vers Ubuntu
+    Complete deployment script for Timesheet DevOps infrastructure and application
 .DESCRIPTION
-    Ce script construit l'application Maven et la déploie sur Ubuntu avec Docker Compose
+    Builds Spring app, deploys MySQL, Prometheus, Grafana, Node Exporter and starts everything
+.PARAMETER DeployToRemote
+    If $true, deploy to remote Ubuntu server
 .PARAMETER SSHHost
-    Adresse IP ou hostname du serveur Ubuntu
+    Remote server hostname/IP (required if DeployToRemote is true)
 .PARAMETER SSHUser
-    Utilisateur SSH (par défaut: ubuntu)
+    SSH username (default: vagrant)
 .PARAMETER SSHKey
-    Chemin vers la clé SSH privée
+    Path to SSH private key file
 #>
 
 param(
     [Parameter(Mandatory=$false)]
+    [bool]$DeployToRemote = $false,
+    
+    [Parameter(Mandatory=$false)]
     [string]$SSHHost = "",
     
     [Parameter(Mandatory=$false)]
-    [string]$SSHUser = "ubuntu",
+    [string]$SSHUser = "vagrant",
     
     [Parameter(Mandatory=$false)]
     [string]$SSHKey = ""
 )
 
-# Fonctions d'affichage
+# Configuration
+$SPRING_JAR = ".\target\timesheet-devops-1.0.jar"
+$PROJECT_DIR = Get-Location
+
+# Display functions
+function Write-Header {
+    param([string]$Message)
+    Write-Host "`n========================================" -ForegroundColor Blue
+    Write-Host $Message -ForegroundColor Blue
+    Write-Host "========================================`n" -ForegroundColor Blue
+}
+
 function Write-Success {
     param([string]$Message)
     Write-Host "✓ $Message" -ForegroundColor Green
@@ -40,28 +56,19 @@ function Write-Warning-Custom {
     Write-Host "⚠ $Message" -ForegroundColor Yellow
 }
 
-function Write-Header {
-    param([string]$Message)
-    Write-Host "`n========================================" -ForegroundColor Blue
-    Write-Host $Message -ForegroundColor Blue
-    Write-Host "========================================`n" -ForegroundColor Blue
-}
-
-# Vérifier les prérequis
+# Check requirements
 function Check-Requirements {
-    Write-Header "Vérification des Prérequis"
+    Write-Header "🔍 Vérification des Prérequis"
 
-    # Vérifier Maven
+    # Maven
     try {
         $mavenVersion = mvn --version 2>&1 | Select-Object -First 1
         Write-Success "Maven: $mavenVersion"
     } catch {
-        Write-Error-Custom "Maven n'est pas installé"
-        Write-Host "Télécharger depuis: https://maven.apache.org/download.cgi"
-        exit 1
+        Write-Warning-Custom "Maven n'est pas installé"
     }
 
-    # Vérifier Java
+    # Java
     try {
         $javaVersion = java -version 2>&1 | Select-Object -First 1
         Write-Success "Java: $javaVersion"
@@ -70,18 +77,35 @@ function Check-Requirements {
         exit 1
     }
 
-    # Vérifier Git
+    # Git
     try {
         $gitVersion = git --version
         Write-Success "Git: $gitVersion"
     } catch {
         Write-Warning-Custom "Git n'est pas installé (optionnel)"
     }
+
+    # If remote deployment
+    if ($DeployToRemote) {
+        # SSH
+        try {
+            ssh -V 2>&1 | Out-Null
+            Write-Success "SSH: Disponible"
+        } catch {
+            Write-Error-Custom "SSH n'est pas disponible"
+            exit 1
+        }
+    }
 }
 
-# Construire l'application
+# Build Spring application
 function Build-Application {
-    Write-Header "Construction de l'Application Maven"
+    Write-Header "🔨 Construction de l'Application Spring"
+
+    if (-not (Test-Path "pom.xml")) {
+        Write-Error-Custom "pom.xml non trouvé"
+        exit 1
+    }
 
     Write-Host "Exécution de: mvn clean compile..." -ForegroundColor Cyan
     mvn clean compile
@@ -91,8 +115,6 @@ function Build-Application {
         exit 1
     }
 
-    Write-Success "Application compilée avec succès"
-
     Write-Host "Exécution de: mvn clean package -DskipTests..." -ForegroundColor Cyan
     mvn clean package -DskipTests
 
@@ -101,19 +123,23 @@ function Build-Application {
         exit 1
     }
 
-    Write-Success "Package créé avec succès"
-    Write-Host "JAR disponible dans: .\target\timesheet-devops-1.0.jar" -ForegroundColor Yellow
+    if (Test-Path $SPRING_JAR) {
+        Write-Success "Application Spring construite: $SPRING_JAR"
+    } else {
+        Write-Error-Custom "Le JAR n'a pas été créé"
+        exit 1
+    }
 }
 
-# Déployer vers Ubuntu
-function Deploy-ToUbuntu {
+# Deploy to remote Ubuntu via Vagrant SSH
+function Deploy-ToVagrant {
     param(
         [string]$Host,
         [string]$User,
         [string]$KeyPath
     )
 
-    Write-Header "Déploiement vers Ubuntu ($Host)"
+    Write-Header "🚀 Déploiement vers Vagrant ($Host)"
 
     if ([string]::IsNullOrEmpty($Host)) {
         Write-Error-Custom "Aucun hôte spécifié"
@@ -122,32 +148,30 @@ function Deploy-ToUbuntu {
 
     $remoteDir = "/home/$User/timesheet-monitoring"
     
-    # Construire la commande SCP
-    $scpArgs = @()
-    if (-not [string]::IsNullOrEmpty($KeyPath)) {
-        $scpArgs += "-i", $KeyPath
-    }
-    $scpArgs += "-r", ".", "$User@$Host`:$remoteDir/"
-
     Write-Host "Copie du projet vers $Host..." -ForegroundColor Cyan
-    scp @scpArgs
+    
+    $scpArgs = @("-r", ".", "$User@$Host`:$remoteDir/")
+    if (-not [string]::IsNullOrEmpty($KeyPath)) {
+        $scpArgs = @("-i", $KeyPath) + $scpArgs
+    }
+    
+    & scp @scpArgs
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Error-Custom "La copie SSH a échoué"
+        Write-Error-Custom "La copie SCP a échoué"
         exit 1
     }
 
-    Write-Success "Projet copié vers Ubuntu"
-
-    # Construire la commande SSH pour exécuter le script de déploiement
-    $sshArgs = @()
-    if (-not [string]::IsNullOrEmpty($KeyPath)) {
-        $sshArgs += "-i", $KeyPath
-    }
-    $sshArgs += "$User@$Host"
+    Write-Success "Projet copié vers $Host"
 
     Write-Host "Exécution du script de déploiement sur Ubuntu..." -ForegroundColor Cyan
-    ssh @sshArgs "cd $remoteDir && chmod +x deploy-monitoring.sh && sudo ./deploy-monitoring.sh"
+    
+    $sshArgs = @("$User@$Host")
+    if (-not [string]::IsNullOrEmpty($KeyPath)) {
+        $sshArgs = @("-i", $KeyPath) + $sshArgs
+    }
+    
+    & ssh @sshArgs "cd $remoteDir && chmod +x deploy-monitoring.sh && ./deploy-monitoring.sh"
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error-Custom "Le déploiement sur Ubuntu a échoué"
@@ -157,47 +181,104 @@ function Deploy-ToUbuntu {
     Write-Success "Déploiement sur Ubuntu complété"
 }
 
-# Afficher les informations de connexion
-function Show-ConnectionInfo {
-    param(
-        [string]$Host
-    )
+# Show access information
+function Show-AccessInfo {
+    param([string]$Host = "")
 
-    Write-Header "Informations de Connexion"
+    Write-Header "✅ DÉPLOIEMENT RÉUSSI - Accès aux Services"
 
     if ([string]::IsNullOrEmpty($Host)) {
-        Write-Host "Services accessibles en local:" -ForegroundColor Green
+        $ip = "localhost"
+        Write-Host "Services accessibles en LOCAL:" -ForegroundColor Green
     } else {
+        $ip = $Host
         Write-Host "Services accessibles sur: $Host" -ForegroundColor Green
     }
 
-    $ip = if ([string]::IsNullOrEmpty($Host)) { "localhost" } else { $Host }
+    $info = @"
 
-    @"
-
-📊 GRAFANA
-   URL: http://$ip:3000
+📊 GRAFANA (Dashboard de Monitoring)
+   URL: http://$ip`:3000
    Utilisateur: admin
    Mot de passe: admin
+   Dashboards: Overview, Spring Metrics, System Metrics, Jenkins Metrics
 
-📈 PROMETHEUS
-   URL: http://$ip:9090
+📈 PROMETHEUS (Base de données des métriques)
+   URL: http://$ip`:9090
+   Targets: http://$ip`:9090/targets
 
-🖥️  NODE EXPORTER
-   URL: http://$ip:9100/metrics
+🖥️  NODE EXPORTER (Métriques système Ubuntu)
+   URL: http://$ip`:9100/metrics
 
-🐳 CADVISOR
-   URL: http://$ip:8080
+🗄️  MYSQL (Base de données)
+   Host: localhost ou $ip
+   Port: 3306
+   Database: timesheet-devops-db
+   User: timesheet
+   Password: timesheet123
 
-🍃 SPRING APPLICATION
-   URL: http://$ip:8082/timesheet-devops
-   Métriques: http://$ip:8082/timesheet-devops/actuator/prometheus
+🍃 SPRING APPLICATION (Application Timesheet)
+   URL: http://$ip`:8082/timesheet-devops
+   Métriques Prometheus: http://$ip`:8082/timesheet-devops/actuator/prometheus
+   Health: http://$ip`:8082/timesheet-devops/actuator/health
+   API: http://$ip`:8082/timesheet-devops/api
+
+🔍 JENKINS (CI/CD - si disponible)
+   URL: http://$ip`:8080
+
+📋 VOLUMES & DONNÉES:
+   - Prometheus: prometheus_data (persist)
+   - Grafana: grafana_data (persist)
+   - MySQL: mysql_data (persist)
+
+🛠️  COMMANDES DOCKER:
+   - Voir les logs: docker-compose logs -f
+   - Redémarrer les services: docker-compose restart
+   - Arrêter les services: docker-compose down
+   - Vérifier le status: docker-compose ps
+   - Accès MySQL: docker exec -it mysql mysql -u timesheet -p
 
 "@
+    Write-Host $info
 }
 
-# Menu interactif
-function Show-Menu {
+# Main deployment flow
+function Main {
+    Write-Host "
+╔════════════════════════════════════════════════════════════╗
+║  🚀 DÉPLOIEMENT COMPLET - INFRASTRUCTURE + APPLICATION 🚀  ║
+║     Timesheet DevOps - Prometheus, Grafana, MySQL, Spring  ║
+╚════════════════════════════════════════════════════════════╝
+" -ForegroundColor Cyan
+
+    Check-Requirements
+    Build-Application
+
+    if ($DeployToRemote) {
+        if ([string]::IsNullOrEmpty($SSHHost)) {
+            Write-Error-Custom "Vous devez spécifier SSHHost pour le déploiement distant"
+            exit 1
+        }
+        
+        Deploy-ToVagrant -Host $SSHHost -User $SSHUser -KeyPath $SSHKey
+        Show-AccessInfo -Host $SSHHost
+    } else {
+        Write-Host "Pour déployer vers Vagrant, utilisez:" -ForegroundColor Yellow
+        Write-Host "  .\deploy-monitoring.ps1 -DeployToRemote `$true -SSHHost <IP> -SSHUser vagrant" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Pour déploiement LOCAL:" -ForegroundColor Yellow
+        Write-Host "  1. Copier le JAR vers le serveur Vagrant" -ForegroundColor Yellow
+        Write-Host "  2. Dans Vagrant: docker-compose up -d" -ForegroundColor Yellow
+        Write-Host "  3. Dans Vagrant: java -jar timesheet-devops-1.0.jar" -ForegroundColor Yellow
+        Write-Host ""
+        Show-AccessInfo
+    }
+
+    Write-Host "`n✅ Déploiement local préparé - Consultez les instructions ci-dessus`n" -ForegroundColor Green
+}
+
+# Run main
+Main
     Write-Host "`n╔════════════════════════════════════════╗" -ForegroundColor Blue
     Write-Host "║     Timesheet DevOps - Déploiement     ║" -ForegroundColor Blue
     Write-Host "╚════════════════════════════════════════╝" -ForegroundColor Blue

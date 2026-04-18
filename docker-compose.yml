@@ -49,6 +49,28 @@ services:
       timeout: 10s
       retries: 5
 
+  # ============ MYSQL DATABASE ============
+  mysql:
+    image: mysql:5.7
+    container_name: mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: timesheet-devops-db
+      MYSQL_USER: timesheet
+      MYSQL_PASSWORD: timesheet123
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - monitoring
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ============ NODE EXPORTER (Ubuntu Metrics) ============
   node-exporter:
     image: prom/node-exporter:latest
@@ -73,28 +95,43 @@ services:
       timeout: 10s
       retries: 5
 
-  # ============ CADVISER (Docker Metrics) - DISABLED DUE TO COMPATIBILITY ============
-  # If you need Docker metrics, use the commands below instead:
-  # docker stats --no-stream
-  # Or install a different monitoring tool like Portainer
-  
-  # cadvisor:
-  #   image: gcr.io/cadvisor/cadvisor:v0.36.0
-  #   container_name: cadvisor
-  #   ports:
-  #     - "8081:8080"
-  #   volumes:
-  #     - /:/rootfs:ro
-  #     - /var/run:/var/run:ro
-  #     - /sys:/sys:ro
-  #     - /var/lib/docker/:/var/lib/docker:ro
-  #     - /dev/disk/:/dev/disk:ro
-  #   privileged: true
-  #   devices:
-  #     - /dev/kmsg
-  #   networks:
-  #     - monitoring
-  #   restart: unless-stopped
+  # ============ PORTAINER (Docker Management & Metrics) ============
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    ports:
+      - "8000:8000"
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    environment:
+      - INITIAL_ADMIN_PASSWORD=admin123
+    networks:
+      - monitoring
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ============ PROMETHEUS DOCKER EXPORTER (Docker Metrics) ============
+  docker-exporter:
+    image: prometheuscommunity/docker-exporter:latest
+    container_name: docker-exporter
+    ports:
+      - "9323:9323"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - monitoring
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9323"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
 networks:
   monitoring:
@@ -104,4 +141,8 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  mysql_data:
+    driver: local
+  portainer_data:
     driver: local

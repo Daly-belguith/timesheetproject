@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #############################################################
-# Script d'Installation et Déploiement - Prometheus & Grafana
-# Timesheet DevOps Project
+# Complete Infrastructure & Application Deployment Script
+# Timesheet DevOps Project - Prometheus, Grafana, MySQL, Spring App
 # Date: 2026-04-18
 #############################################################
 
@@ -14,6 +14,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Configuration
+SPRING_JAR_PATH="./target/timesheet-devops-1.0.jar"
+SPRING_LOG_PATH="./logs/spring-app.log"
+PROJECT_DIR="$(pwd)"
 
 # Fonction pour afficher les messages
 print_header() {
@@ -64,7 +69,7 @@ check_requirements() {
 
     # Vérifier Maven
     if ! command -v mvn &> /dev/null; then
-        print_warning "Maven n'est pas installé (optionnel si le JAR est déjà construit)"
+        print_warning "Maven n'est pas installé (vous devez avoir un JAR compilé)"
     else
         print_success "Maven est installé: $(mvn --version | head -n 1)"
     fi
@@ -84,20 +89,64 @@ setup_directories() {
         print_success "Répertoire Grafana dashboards créé"
     fi
 
+    if [ ! -d "logs" ]; then
+        mkdir -p logs
+        print_success "Répertoire logs créé"
+    fi
+
     # Définir les permissions
     chmod 755 grafana -R
     print_success "Permissions configurées"
 }
 
-# Démarrer les services Docker
-start_services() {
+# Construire l'application Spring
+build_spring_app() {
+    print_header "Construction de l'Application Spring"
+
+    if [ ! -f "pom.xml" ]; then
+        print_error "pom.xml non trouvé"
+        exit 1
+    fi
+
+    if ! command -v mvn &> /dev/null; then
+        print_warning "Maven n'est pas disponible, en supposant que le JAR est compilé"
+        return 0
+    fi
+
+    echo -e "${YELLOW}Exécution de: mvn clean package -DskipTests${NC}"
+    mvn clean package -DskipTests
+
+    if [ -f "$SPRING_JAR_PATH" ]; then
+        print_success "Application Spring construite: $SPRING_JAR_PATH"
+    else
+        print_error "Le JAR n'a pas été créé"
+        exit 1
+    fi
+}
+
+# Arrêter les services existants
+stop_existing_services() {
+    print_header "Arrêt des Services Existants"
+
+    if docker-compose ps | grep -q "Up"; then
+        echo -e "${YELLOW}Arrêt des services Docker existants...${NC}"
+        docker-compose down
+        sleep 5
+        print_success "Services arrêtés"
+    else
+        print_success "Aucun service Docker en cours d'exécution"
+    fi
+}
+
+# Démarrer les services Docker (MySQL, Prometheus, Grafana, Node Exporter)
+start_docker_services() {
     print_header "Démarrage des Services Docker"
 
-    echo -e "${YELLOW}Démarrage de Prometheus, Grafana, Node Exporter, et cAdvisor...${NC}"
+    echo -e "${YELLOW}Démarrage de MySQL, Prometheus, Grafana, Node Exporter...${NC}"
 
     if docker-compose up -d; then
         print_success "Services Docker démarrés"
-        sleep 10
+        sleep 15  # Attendre que MySQL soit prêt
 
         # Vérifier que les services sont en cours d'exécution
         if docker-compose ps | grep -q "Up"; then
@@ -105,11 +154,80 @@ start_services() {
         else
             print_error "Certains services ne sont pas en cours d'exécution"
             docker-compose ps
+            exit 1
         fi
     else
         print_error "Erreur lors du démarrage des services Docker"
         exit 1
     fi
+}
+
+# Initialiser la base de données MySQL
+initialize_mysql() {
+    print_header "Initialisation de la Base de Données MySQL"
+
+    echo -e "${YELLOW}Attente que MySQL soit prêt...${NC}"
+    sleep 10
+
+    # Vérifier que MySQL est accessible
+    max_attempts=30
+    attempt=0
+    while [ $attempt -lt $max_attempts ]; do
+        if docker exec mysql mysql -u root -proot -e "SELECT 1;" > /dev/null 2>&1; then
+            print_success "MySQL est prêt"
+            break
+        fi
+        attempt=$((attempt + 1))
+        echo -e "${YELLOW}Attente de MySQL... ($attempt/$max_attempts)${NC}"
+        sleep 2
+    done
+
+    if [ $attempt -eq $max_attempts ]; then
+        print_error "MySQL n'a pas répondu à temps"
+        exit 1
+    fi
+
+    # Vérifier que la base de données existe
+    if docker exec mysql mysql -u timesheet -ptimesheet123 -e "USE timesheet-devops-db;" 2>/dev/null; then
+        print_success "Base de données MySQL existe et est accessible"
+    else
+        print_warning "Base de données sera créée par Hibernate au démarrage de l'application"
+    fi
+}
+
+# Démarrer l'application Spring
+start_spring_app() {
+    print_header "Démarrage de l'Application Spring"
+
+    if [ ! -f "$SPRING_JAR_PATH" ]; then
+        print_error "Le JAR Spring n'a pas été trouvé: $SPRING_JAR_PATH"
+        exit 1
+    fi
+
+    echo -e "${YELLOW}Lancement de l'application Spring en arrière-plan...${NC}"
+    nohup java -jar "$SPRING_JAR_PATH" > "$SPRING_LOG_PATH" 2>&1 &
+    SPRING_PID=$!
+    print_success "Application Spring lancée (PID: $SPRING_PID)"
+
+    # Attendre que l'application démarre
+    echo -e "${YELLOW}Attente du démarrage de l'application Spring...${NC}"
+    sleep 15
+
+    max_attempts=30
+    attempt=0
+    while [ $attempt -lt $max_attempts ]; do
+        if curl -sf http://localhost:8082/timesheet-devops/actuator/health > /dev/null 2>&1; then
+            print_success "Application Spring est prête"
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        echo -e "${YELLOW}Attente de l'application Spring... ($attempt/$max_attempts)${NC}"
+        sleep 2
+    done
+
+    print_error "L'application Spring n'a pas répondu à temps"
+    echo -e "${RED}Consulter les logs: tail -f $SPRING_LOG_PATH${NC}"
+    exit 1
 }
 
 # Vérifier la connectivité des services
@@ -125,7 +243,7 @@ verify_services() {
     if curl -sf http://localhost:9090/-/healthy > /dev/null 2>&1; then
         print_success "Prometheus est actif"
     else
-        print_warning "Prometheus ne répond pas (il peut prendre du temps)"
+        print_warning "Prometheus ne répond pas"
     fi
 
     # Vérifier Grafana
@@ -133,7 +251,7 @@ verify_services() {
     if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
         print_success "Grafana est actif"
     else
-        print_warning "Grafana ne répond pas (il peut prendre du temps)"
+        print_warning "Grafana ne répond pas"
     fi
 
     # Vérifier Node Exporter
@@ -144,12 +262,36 @@ verify_services() {
         print_warning "Node Exporter ne répond pas"
     fi
 
-    # Vérifier cAdvisor
-    echo -n "Vérification cAdvisor... "
-    if curl -sf http://localhost:8080/api/v1/spec > /dev/null 2>&1; then
-        print_success "cAdvisor est actif"
+    # Vérifier Portainer
+    echo -n "Vérification Portainer... "
+    if curl -sf http://localhost:9000/api/status > /dev/null 2>&1; then
+        print_success "Portainer est actif"
     else
-        print_warning "cAdvisor ne répond pas (il peut prendre du temps)"
+        print_warning "Portainer ne répond pas"
+    fi
+
+    # Vérifier Docker Exporter
+    echo -n "Vérification Docker Exporter... "
+    if curl -sf http://localhost:9323/metrics > /dev/null 2>&1; then
+        print_success "Docker Exporter est actif"
+    else
+        print_warning "Docker Exporter ne répond pas"
+    fi
+
+    # Vérifier MySQL
+    echo -n "Vérification MySQL... "
+    if docker exec mysql mysql -u timesheet -ptimesheet123 -e "SELECT 1;" > /dev/null 2>&1; then
+        print_success "MySQL est actif"
+    else
+        print_warning "MySQL ne répond pas"
+    fi
+
+    # Vérifier Spring App
+    echo -n "Vérification Spring Application... "
+    if curl -sf http://localhost:8082/timesheet-devops/actuator/health > /dev/null 2>&1; then
+        print_success "Spring Application est active"
+    else
+        print_warning "Spring Application ne répond pas"
     fi
 
     echo ""
@@ -162,109 +304,81 @@ show_access_info() {
     LOCAL_IP=$(hostname -I | awk '{print $1}')
 
     cat << EOF
-${GREEN}Services maintenant accessibles:${NC}
+${GREEN}✓ DÉPLOIEMENT COMPLÉTÉ - Services accessibles:${NC}
 
-📊 GRAFANA
+📊 GRAFANA (Dashboard de Monitoring)
    URL: http://${LOCAL_IP}:3000
    Utilisateur: admin
    Mot de passe: admin
-   Dashboards: Overview, Spring Metrics, System Metrics, Docker Metrics, Jenkins Metrics
+   Dashboards: Overview, Spring Metrics, System Metrics, Jenkins Metrics
 
-📈 PROMETHEUS
+📈 PROMETHEUS (Base de données des métriques)
    URL: http://${LOCAL_IP}:9090
    Targets: http://${LOCAL_IP}:9090/targets
 
-🖥️  NODE EXPORTER (Système Ubuntu)
+� PORTAINER (Docker Management UI)
+   URL: http://${LOCAL_IP}:9000
+   Utilisateur: admin
+   Mot de passe: admin123
+   Features: Gérer conteneurs, images, volumes, logs, stats
+
+📊 DOCKER EXPORTER (Métriques Docker)
+   URL: http://${LOCAL_IP}:9323/metrics
+   Intégration: Prometheus scrape automatiquement les métriques
+   Données: CPU, mémoire, réseau par conteneur
+
+�🖥️  NODE EXPORTER (Métriques système Ubuntu)
    URL: http://${LOCAL_IP}:9100/metrics
+   Données collectées: CPU, mémoire, disque, réseau
 
-🐳 CADVISOR (Docker Containers)
-   URL: http://${LOCAL_IP}:8081
+🗄️  MYSQL (Base de données)
+   Host: localhost
+   Port: 3306
+   Database: timesheet-devops-db
+   Utilisateur: timesheet
+   Mot de passe: timesheet123
+   Accès Docker: docker exec -it mysql mysql -u timesheet -p
 
-🍃 SPRING APPLICATION
+🍃 SPRING APPLICATION (Application Timesheet)
    URL: http://${LOCAL_IP}:8082/timesheet-devops
    Métriques Prometheus: http://${LOCAL_IP}:8082/timesheet-devops/actuator/prometheus
    Health: http://${LOCAL_IP}:8082/timesheet-devops/actuator/health
+   API: http://${LOCAL_IP}:8082/timesheet-devops/api
 
-${YELLOW}Configuration Docker Compose:${NC}
-   - Prometheus: port 9090
-   - Grafana: port 3000
-   - Node Exporter: port 9100
-   - cAdvisor: port 8081
+${YELLOW}🔍 Volumes et Données:${NC}
+   - Prometheus: prometheus_data (persist)
+   - Grafana: grafana_data (persist)
+   - MySQL: mysql_data (persist)
 
-${YELLOW}Volume de données:${NC}
-   - Prometheus: prometheus_data
-   - Grafana: grafana_data
+${YELLOW}📋 Logs:${NC}
+   - Spring App: $SPRING_LOG_PATH
+   - Docker: docker-compose logs -f
 
-EOF
-}
-
-# Afficher les commandes utiles
-show_useful_commands() {
-    print_header "Commandes Utiles"
-
-    cat << EOF
-${GREEN}Gestion des services:${NC}
-
-# Arrêter tous les services
-docker-compose down
-
-# Voir les logs en temps réel
-docker-compose logs -f prometheus
-docker-compose logs -f grafana
-
-# Redémarrer un service
-docker-compose restart prometheus
-
-# Voir l'état des services
-docker-compose ps
-
-${GREEN}Métriques et diagnostic:${NC}
-
-# Vérifier les cibles Prometheus
-curl http://localhost:9090/api/v1/targets
-
-# Tester Spring Actuator
-curl http://localhost:8082/timesheet-devops/actuator/health
-
-# Afficher les 10 premières métriques Prometheus
-curl http://localhost:9090/api/v1/series?match[]=up | head -10
-
-${GREEN}Documentation:${NC}
-
-# Voir le guide complet
-cat MONITORING_GUIDE.md
+${YELLOW}🛑 Commandes Utiles:${NC}
+   - Voir les logs Spring: tail -f $SPRING_LOG_PATH
+   - Voir tous les logs: docker-compose logs -f
+   - Redémarrer les services: docker-compose restart
+   - Arrêter les services: docker-compose down
+   - Vérifier status: docker-compose ps
 
 EOF
 }
 
 # Fonction principale
 main() {
-    clear
-    echo -e "${BLUE}"
-    echo "╔════════════════════════════════════════════════════╗"
-    echo "║   PROMETHEUS & GRAFANA - Installation & Déploiement ║"
-    echo "║           Timesheet DevOps Project                  ║"
-    echo "╚════════════════════════════════════════════════════╝"
-    echo -e "${NC}\n"
+    print_header "🚀 DÉPLOIEMENT COMPLET - INFRASTRUCTURE + APPLICATION"
 
-    # Vérifier que nous sommes dans le bon répertoire
-    if [ ! -f "docker-compose.yml" ]; then
-        print_error "Erreur: docker-compose.yml non trouvé"
-        echo "Assurez-vous d'exécuter ce script depuis le répertoire racine du projet"
-        exit 1
-    fi
-
-    # Exécuter les étapes
     check_requirements
     setup_directories
-    start_services
-    sleep 5
+    stop_existing_services
+    build_spring_app
+    start_docker_services
+    initialize_mysql
+    start_spring_app
     verify_services
     show_access_info
-    show_useful_commands
 
-    print_header "Installation Terminée ✓"
-    echo -e "${GREEN}Tous les services sont maintenant en cours d'exécution!${NC}"
+    print_header "✅ DÉPLOIEMENT RÉUSSI!"
     echo -e "${GREEN}Rendez-vous sur Grafana pour commencer le monitoring.${NC}\n"
 }
 
