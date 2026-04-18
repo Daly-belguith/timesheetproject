@@ -197,11 +197,12 @@ initialize_mysql() {
 
 # Démarrer l'application Spring
 start_spring_app() {
-    print_header "Démarrage de l'Application Spring"
+    print_header "Démarrage de l'Application Spring (Optionnel)"
 
     if [ ! -f "$SPRING_JAR_PATH" ]; then
-        print_error "Le JAR Spring n'a pas été trouvé: $SPRING_JAR_PATH"
-        exit 1
+        print_warning "Le JAR Spring n'a pas été trouvé: $SPRING_JAR_PATH"
+        print_warning "L'application Spring sera ignorée - Les autres services fonctionneront"
+        return 0
     fi
 
     echo -e "${YELLOW}Lancement de l'application Spring en arrière-plan...${NC}"
@@ -225,9 +226,10 @@ start_spring_app() {
         sleep 2
     done
 
-    print_error "L'application Spring n'a pas répondu à temps"
-    echo -e "${RED}Consulter les logs: tail -f $SPRING_LOG_PATH${NC}"
-    exit 1
+    print_warning "L'application Spring n'a pas répondu à temps"
+    echo -e "${YELLOW}Logs disponibles: tail -f $SPRING_LOG_PATH${NC}"
+    echo -e "${YELLOW}Les autres services (Prometheus, Grafana, MySQL) fonctionneront normalement${NC}"
+    return 0
 }
 
 # Vérifier la connectivité des services
@@ -283,7 +285,7 @@ verify_services() {
     if curl -sf http://localhost:8082/timesheet-devops/actuator/health > /dev/null 2>&1; then
         print_success "Spring Application est active"
     else
-        print_warning "Spring Application ne répond pas"
+        print_warning "Spring Application ne répond pas (optionnel - autres services fonctionnent)"
     fi
 
     echo ""
@@ -330,11 +332,12 @@ ${GREEN}✓ DÉPLOIEMENT COMPLÉTÉ - Services accessibles:${NC}
    Mot de passe: timesheet123
    Accès Docker: docker exec -it mysql mysql -u timesheet -p
 
-🍃 SPRING APPLICATION (Application Timesheet)
+🍃 SPRING APPLICATION (Application Timesheet) - OPTIONNEL
    URL: http://${LOCAL_IP}:8082/timesheet-devops
    Métriques Prometheus: http://${LOCAL_IP}:8082/timesheet-devops/actuator/prometheus
    Health: http://${LOCAL_IP}:8082/timesheet-devops/actuator/health
    API: http://${LOCAL_IP}:8082/timesheet-devops/api
+   Statut: Vérifiez avec: curl http://localhost:8082/timesheet-devops/actuator/health
 
 ${YELLOW}🔍 Volumes et Données:${NC}
    - Prometheus: prometheus_data (persist)
@@ -370,6 +373,14 @@ main() {
     show_access_info
 
     print_header "✅ DÉPLOIEMENT RÉUSSI!"
+    echo -e "${GREEN}Services de monitoring déployés:${NC}"
+    echo -e "${GREEN}  ✓ Prometheus (9090)${NC}"
+    echo -e "${GREEN}  ✓ Grafana (3000)${NC}"
+    echo -e "${GREEN}  ✓ MySQL (3306)${NC}"
+    echo -e "${GREEN}  ✓ Node Exporter (9100)${NC}"
+    echo -e "${GREEN}  ✓ Portainer (8001)${NC}"
+    echo -e "${YELLOW}  ⚠ Spring Application (8082) - Optionnel${NC}"
+    echo ""
     echo -e "${GREEN}Rendez-vous sur Grafana pour commencer le monitoring.${NC}\n"
 }
 
