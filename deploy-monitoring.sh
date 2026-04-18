@@ -270,14 +270,6 @@ verify_services() {
         print_warning "Portainer ne répond pas"
     fi
 
-    # Vérifier Docker Exporter
-    echo -n "Vérification Docker Exporter... "
-    if curl -sf http://localhost:9323/metrics > /dev/null 2>&1; then
-        print_success "Docker Exporter est actif"
-    else
-        print_warning "Docker Exporter ne répond pas"
-    fi
-
     # Vérifier MySQL
     echo -n "Vérification MySQL... "
     if docker exec mysql mysql -u timesheet -ptimesheet123 -e "SELECT 1;" > /dev/null 2>&1; then
@@ -316,16 +308,15 @@ ${GREEN}✓ DÉPLOIEMENT COMPLÉTÉ - Services accessibles:${NC}
    URL: http://${LOCAL_IP}:9090
    Targets: http://${LOCAL_IP}:9090/targets
 
-� PORTAINER (Docker Management UI)
+🐳 PORTAINER (Docker Management UI + Container Metrics)
    URL: http://${LOCAL_IP}:9000
    Utilisateur: admin
    Mot de passe: admin123
-   Features: Gérer conteneurs, images, volumes, logs, stats
+   Features: Gérer conteneurs, images, volumes, logs, stats en temps réel
 
 📊 DOCKER EXPORTER (Métriques Docker)
-   URL: http://${LOCAL_IP}:9323/metrics
-   Intégration: Prometheus scrape automatiquement les métriques
-   Données: CPU, mémoire, réseau par conteneur
+   Note: Utilisez Portainer pour voir les stats des conteneurs
+   Alternative: docker stats (command line)
 
 �🖥️  NODE EXPORTER (Métriques système Ubuntu)
    URL: http://${LOCAL_IP}:9100/metrics

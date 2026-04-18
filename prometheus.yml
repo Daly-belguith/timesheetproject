@@ -51,20 +51,6 @@ scrape_configs:
         target_label: instance
         replacement: 'ubuntu'
 
-  # ============ Docker Exporter (Docker Container Metrics) ============
-  - job_name: 'docker-exporter'
-    static_configs:
-      - targets: ['docker-exporter:9323']
-        labels:
-          service: 'docker-metrics'
-          exporter: 'docker'
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: instance
-        replacement: 'docker'
-    scrape_interval: 15s
-    scrape_timeout: 5s
-
   # ============ Portainer (Docker Management UI) ============
   - job_name: 'portainer'
     static_configs:
@@ -79,18 +65,13 @@ scrape_configs:
     scrape_interval: 30s
     scrape_timeout: 10s
 
-  # ============ Docker/cAdvisor Metrics (DISABLED - Replaced with Docker Exporter) ============
-  # cAdvisor had compatibility issues with Docker Compose 1.29.2
-  # Replaced with: Docker Exporter (9323) + Portainer (9000)
-  # - job_name: 'cadvisor'
-  #   static_configs:
-  #     - targets: ['cadvisor:8080']
-  #       labels:
-  #         service: 'docker-metrics'
-  #   relabel_configs:
-  #     - source_labels: [__address__]
-  #       target_label: instance
-  #       replacement: 'docker'
+  # ============ Docker Metrics (Alternative: Use docker stats or Portainer UI) ============
+  # Note: Docker Exporter image was not available/working
+  # Alternatives for Docker metrics:
+  # 1. Use Portainer UI at http://localhost:9000 (built-in container stats)
+  # 2. Use 'docker stats' command manually
+  # 3. Use Node Exporter + cAdvisor (if you resolve compatibility issues)
+  # 4. Access docker info via: docker exec <container> /bin/sh
   - job_name: 'jenkins'
     metrics_path: '/prometheus'
     static_configs:
