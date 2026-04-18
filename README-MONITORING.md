@@ -106,7 +106,7 @@ management.metrics.export.prometheus.enabled=true
 | **Grafana** | 3000 | http://localhost:3000 | Dashboards & Visualisation |
 | **Prometheus** | 9090 | http://localhost:9090 | Base de données métriques |
 | **Node Exporter** | 9100 | http://localhost:9100 | Métriques système |
-| **cAdvisor** | 8080 | http://localhost:8080 | Métriques Docker |
+| **cAdvisor** | 8081 | http://localhost:8081 | Métriques Docker |
 | **Spring App** | 8082 | http://localhost:8082/timesheet-devops | Application métier |
 | **Jenkins** | 8083 | http://localhost:8083 | CI/CD (externe) |
 

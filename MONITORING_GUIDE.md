@@ -94,7 +94,7 @@ Les sources de scraping configurées:
 | Prometheus Self | 9090 | `/metrics` | 15s |
 | Spring App | 8082 | `/timesheet-devops/actuator/prometheus` | 15s |
 | Node Exporter | 9100 | `/metrics` | 15s |
-| cAdvisor | 8080 | `/metrics` | 15s |
+| cAdvisor | 8081 | `/metrics` | 15s |
 | Jenkins | 8083 | `/prometheus` | 30s |
 
 ### Grafana Configuration

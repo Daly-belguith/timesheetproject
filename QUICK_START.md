@@ -86,7 +86,7 @@ docker-compose ps
 | **Grafana** | http://<IP>:3000 |
 | **Prometheus** | http://<IP>:9090 |
 | **Node Exporter** | http://<IP>:9100 |
-| **cAdvisor** | http://<IP>:8080 |
+| **cAdvisor** | http://<IP>:8081 |
 | **Spring App** | http://<IP>:8082/timesheet-devops |
 
 ### Via Terminal:

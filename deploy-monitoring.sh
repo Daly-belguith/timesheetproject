@@ -178,7 +178,7 @@ ${GREEN}Services maintenant accessibles:${NC}
    URL: http://${LOCAL_IP}:9100/metrics
 
 🐳 CADVISOR (Docker Containers)
-   URL: http://${LOCAL_IP}:8080
+   URL: http://${LOCAL_IP}:8081
 
 🍃 SPRING APPLICATION
    URL: http://${LOCAL_IP}:8082/timesheet-devops
@@ -189,7 +189,7 @@ ${YELLOW}Configuration Docker Compose:${NC}
    - Prometheus: port 9090
    - Grafana: port 3000
    - Node Exporter: port 9100
-   - cAdvisor: port 8080
+   - cAdvisor: port 8081
 
 ${YELLOW}Volume de données:${NC}
    - Prometheus: prometheus_data
